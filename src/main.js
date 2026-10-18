@@ -12,7 +12,7 @@ const groups = [
 ];
 const sceneNames = { sandbox: 'The play room', bowling: 'Knock ’em down', marbles: 'Marble mischief', zero: 'Zero-G daydream' };
 const toolNames = { grab: 'Grab & squish', blast: 'Make a blast', erase: 'Remove objects' };
-const toolHints = { grab: 'Grab anything. Push into a wall to squish. Let go to spring back.', blast: 'Click anywhere to send things flying.', erase: 'Click an object to remove it. Undo brings it back.' };
+const toolHints = { grab: 'Push into a wall to squish. Push harder, then release to launch!', blast: 'Click anywhere to send things flying.', erase: 'Click an object to remove it. Undo brings it back.' };
 
 $('#app').innerHTML = `
   <header class="app-header">
@@ -62,7 +62,7 @@ $('#app').innerHTML = `
     </section>
   </main>
   <footer class="app-footer"><span>A tiny playground for your curious side.</span><span>Built with physics. Best enjoyed without a plan. <span class="footer-flower">✳</span></span></footer>
-  <dialog id="help-dialog"><button id="close-help" class="dialog-close icon-button" aria-label="Close how to play">${icon('close')}</button><div class="help-mark">${toyIcon('jelly')}</div><span class="eyebrow">WELCOME TO YOUR LITTLE LAB</span><h2>Serious physics.<br>Unserious experiments.</h2><p>There’s nothing to win. Just a room full of things that are really fun to mess with.</p><div class="help-grid"><div>${icon('hand',24)}<h3>Grab, push & squish</h3><p>Grab any toy and push it into a wall, the floor, or another toy. Keep pushing to compress; release to spring back.</p></div><div>${icon('squeeze',24)}<h3>Feel the difference</h3><p>Everything is elastic. Jelly squishes easily; rubber resists more; wood and metal need much more force. A faster fling still throws.</p></div><div>${icon('plus',24)}<h3>Make it yours</h3><p>Add toys from the shelf. Try a trampoline, or use a magnet to attract the steel balls.</p></div><div>${icon('settings',24)}<h3>Bend the rules</h3><p>Try Moon gravity, slow time, motion trails, or a ready-made scene. Save your favorite mess.</p></div></div><div class="shortcut-row"><span><kbd>1</kbd>–<kbd>3</kbd> Tools</span><span><kbd>Space</kbd> Pause</span><span><kbd>R</kbd> Reset</span><span><kbd>B</kbd> Ball rain</span></div><button id="start-playing" class="button primary">Let’s make a mess ${icon('plus',17)}</button><small>Mass, friction, springs and pressure bring every toy to life. Compression and rebound come from contact with the room and other toys.</small></dialog>
+  <dialog id="help-dialog"><button id="close-help" class="dialog-close icon-button" aria-label="Close how to play">${icon('close')}</button><div class="help-mark">${toyIcon('jelly')}</div><span class="eyebrow">WELCOME TO YOUR LITTLE LAB</span><h2>Serious physics.<br>Unserious experiments.</h2><p>There’s nothing to win. Just a room full of things that are really fun to mess with.</p><div class="help-grid"><div>${icon('hand',24)}<h3>Grab, push & squish</h3><p>Grab any toy and push it into a wall, the floor, or another toy. Push harder to compress more; release to launch away from the surface.</p></div><div>${icon('squeeze',24)}<h3>Feel the difference</h3><p>Everything is elastic. Jelly squishes easily; rubber resists more; wood and metal need much more force. A faster fling still throws.</p></div><div>${icon('plus',24)}<h3>Make it yours</h3><p>Add toys from the shelf. Try a trampoline, or use a magnet to attract the steel balls.</p></div><div>${icon('settings',24)}<h3>Bend the rules</h3><p>Try Moon gravity, slow time, motion trails, or a ready-made scene. Save your favorite mess.</p></div></div><div class="shortcut-row"><span><kbd>1</kbd>–<kbd>3</kbd> Tools</span><span><kbd>Space</kbd> Pause</span><span><kbd>R</kbd> Reset</span><span><kbd>B</kbd> Ball rain</span></div><button id="start-playing" class="button primary">Let’s make a mess ${icon('plus',17)}</button><small>Mass, friction, springs and pressure bring every toy to life. Compression and rebound come from contact with the room and other toys.</small></dialog>
   <input id="import-file" type="file" accept="application/json,.json" hidden/>
 `;
 
@@ -172,8 +172,8 @@ function coords(event) {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function releasePointer() {
-  room.endGrab();
+function releasePointer(launch = false) {
+  room.endGrab(launch && !paused);
   pointerDown = false;
   if (activePointer != null && $('#room').hasPointerCapture(activePointer)) $('#room').releasePointerCapture(activePointer);
   activePointer = null; $('#room').classList.remove('dragging');

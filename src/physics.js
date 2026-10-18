@@ -95,7 +95,7 @@ export class PhysicsRoom {
   }
 
   resize(width, height) {
-    this.endGrab();
+    this.endGrab(false);
     const sx = width / this.width, sy = height / this.height;
     for (const entity of this.entities) {
       const c = centerOf(entity);
@@ -162,13 +162,13 @@ export class PhysicsRoom {
   }
 
   remove(entity) {
-    if (this.grab?.entity === entity) this.endGrab();
+    if (this.grab?.entity === entity) this.endGrab(false);
     Composite.remove(this.engine.world, [...entity.nodes, ...entity.constraints, ...entity.mounts]);
     this.entities = this.entities.filter(e => e !== entity);
   }
 
   clear() {
-    this.endGrab();
+    this.endGrab(false);
     for (const e of [...this.entities]) this.remove(e);
   }
 
@@ -203,7 +203,7 @@ export class PhysicsRoom {
   }
 
   startGrab(entity, point) {
-    this.endGrab();
+    this.endGrab(false);
     if (entity.fixed) {
       Composite.remove(this.engine.world, entity.mounts);
       entity.mounts = [];
@@ -215,11 +215,46 @@ export class PhysicsRoom {
     if (this.grab) this.grab.point = { ...point };
   }
 
-  endGrab() {
+  endGrab(rebound = true) {
     if (!this.grab) return;
-    const entity = this.grab.entity;
+    const { entity, contact } = this.grab;
     this.grab = null;
     if (entity.fixed) this.mount(entity);
+    else if (rebound && contact && this.elapsed - contact.at <= 0.075) {
+      const strain = Math.max(0, shapeTransform(entity).compression - 0.025);
+      if (strain <= 0) return;
+      // Recover visibly useful launch energy from actual surface compression.
+      // There is no timer charge: current strain and the material set the power.
+      const speed = Math.min(30, 42 * Math.sqrt(strain) * (entity.mat.rebound ?? 0.8));
+      const impulse = Vector.mult(contact.normal, speed);
+      for (const node of entity.nodes) {
+        let velocity = Vector.add(node.velocity, impulse);
+        const magnitude = Vector.magnitude(velocity);
+        if (magnitude > 40) velocity = Vector.mult(velocity, 40 / magnitude);
+        Body.setVelocity(node, velocity);
+      }
+      this.onBurst?.(centerOf(entity), entity.mat.color, 10 + Math.round(strain * 18));
+    }
+  }
+
+  trackGrabContact() {
+    if (!this.grab || this.grab.entity.fixed) return;
+    const g = this.grab, id = g.entity.id;
+    let normal = { x: 0, y: 0 };
+    for (const pair of this.engine.pairs.list) {
+      if (!pair.isActive) continue;
+      const a = pair.bodyA, b = pair.bodyB;
+      const own = a.plugin.entity === id ? a : b.plugin.entity === id ? b : null;
+      if (!own) continue;
+      const other = own === a ? b : a;
+      if (other.plugin.entity === id) continue;
+      let n = pair.collision.normal;
+      if (Vector.dot(n, Vector.sub(own.position, other.position)) < 0) n = Vector.neg(n);
+      const pressure = -Vector.dot(g.acceleration, n);
+      if (pressure <= 0.0005) continue;
+      normal = Vector.add(normal, Vector.mult(n, pressure * Math.max(0.1, pair.collision.depth)));
+    }
+    if (Vector.magnitude(normal) > 0.00001) g.contact = { normal: Vector.normalise(normal), at: this.elapsed };
   }
 
   driveGrab() {
@@ -398,6 +433,7 @@ export class PhysicsRoom {
     }
     Engine.update(this.engine, STEP);
     for (const e of this.entities) { this.dampDeformation(e); this.preserveMembrane(e); }
+    this.trackGrabContact();
     // Bound extreme impulses and repair only escaped/invalid states, never normal deformation.
     for (const e of [...this.entities]) {
       for (const b of e.nodes) {

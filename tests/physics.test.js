@@ -37,7 +37,7 @@ for (const kind of ['water', 'jelly', 'rubber']) {
       room.step();
       assert.ok(polygonArea(e.nodes) > e.restArea * 0.25, 'corner pressure cannot invert the membrane');
     }
-    room.endGrab(); advance(room, 3);
+    room.endGrab(false); advance(room, 3);
     assert.ok(shapeTransform(e).compression < 0.03, 'a folded edge cannot remain stuck inside the blob');
     assertFiniteAndContained(room);
     }
@@ -53,9 +53,9 @@ for (const kind of Object.keys(MATERIALS)) {
     assert.ok(shapeTransform(e).compression > 0.001, `${kind} collision shape responds to pressure`);
     assert.ok(polygonArea(e.nodes) > e.restArea * 0.30, 'mesh keeps its orientation and volume');
     const velocities = e.nodes.map(n => ({ ...n.velocity }));
-    room.endGrab();
+    room.endGrab(false);
     assert.equal(room.grab, null);
-    e.nodes.forEach((n, i) => assert.deepEqual(n.velocity, velocities[i], 'release adds no artificial launch velocity'));
+    e.nodes.forEach((n, i) => assert.deepEqual(n.velocity, velocities[i], 'cancelling a grab keeps its current velocity'));
     advance(room, 0.17);
     if (e.mat.soft) assert.ok(e.nodes.reduce((y,n) => y + n.velocity.y / e.nodes.length, 0) < -1, 'stored deformation springs away from floor');
     advance(room, 2);
@@ -73,7 +73,7 @@ for (const wall of ['left', 'right', 'ceiling', 'floor']) {
     room.startGrab(e, centerOf(e)); room.moveGrab(targets[wall]); advance(room, 1.5);
     assert.ok(shapeTransform(e).compression > 0.25);
     assert.equal(room.engine.world.bodies.length, beforeBodies, 'no compression jaws or invisible press objects');
-    room.endGrab(); advance(room, 2);
+    room.endGrab(false); advance(room, 2);
     assert.ok(shapeTransform(e).compression < 0.03);
     assertFiniteAndContained(room);
   });
@@ -99,7 +99,7 @@ test('grabbing in free space transports the object without automatically chargin
   assert.ok(Math.abs(centerOf(e).y-400)<1);
   assert.ok(shapeTransform(e).compression<0.01);
   const bodyCount = room.engine.world.bodies.length;
-  room.endGrab(); assert.equal(room.engine.world.bodies.length,bodyCount);
+  room.endGrab(false); assert.equal(room.engine.world.bodies.length,bodyCount);
 });
 
 test('a ball also squishes against another mounted object', () => {
@@ -109,7 +109,7 @@ test('a ball also squishes against another mounted object', () => {
   room.startGrab(e,centerOf(e)); room.moveGrab({x:500,y:545}); advance(room,1.5);
   assert.ok(shapeTransform(e).compression>0.15);
   assert.ok(centerOf(e).y<545);
-  room.endGrab(); advance(room,2); assertFiniteAndContained(room);
+  room.endGrab(false); advance(room,2); assertFiniteAndContained(room);
 });
 
 test('fan provides upward lift and magnet attracts only steel balls', () => {
@@ -129,7 +129,7 @@ test('mounted toys can be moved with the same grab and stay mounted after releas
   room.startGrab(ramp, {x:400,y:300}); room.moveGrab({x:600,y:200}); advance(room,1);
   assert.ok(Math.abs(centerOf(ramp).x-600)<1); assert.ok(Math.abs(centerOf(ramp).y-200)<1);
   assert.equal(ramp.mounts.length,0);
-  room.endGrab(); assert.equal(room.grab,null); assert.equal(ramp.mounts.length,ramp.nodes.length);
+  room.endGrab(false); assert.equal(room.grab,null); assert.equal(ramp.mounts.length,ramp.nodes.length);
   const c=centerOf(ramp); advance(room,2);
   assert.ok(Math.hypot(centerOf(ramp).x-c.x,centerOf(ramp).y-c.y)<2);
 });

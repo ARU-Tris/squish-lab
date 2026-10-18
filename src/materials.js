@@ -1,9 +1,9 @@
 // Stiffness controls the actual collision mesh, not just its drawing.
 export const MATERIALS = {
-  jelly: { name: 'Jelly', color: '#97c5ef', dark: '#537fa8', radius: 48, soft: true, stiffness: 0.045, pressure: 0.00032, restitution: 0.40, firmness: 'Very soft' },
-  rubber: { name: 'Rubber', color: '#f5aa9c', dark: '#ba6555', radius: 40, soft: true, stiffness: 0.12, pressure: 0.00065, restitution: 0.72, firmness: 'Springy' },
-  water: { name: 'Water blob', color: '#b6abd9', dark: '#80709d', radius: 51, soft: true, stiffness: 0.018, pressure: 0.00024, restitution: 0.22, firmness: 'Extra soft' },
-  bouncy: { name: 'Super ball', color: '#ebcd64', dark: '#ac8b2e', radius: 24, stiffness: 0.21, pressure: 0.0011, restitution: 0.96, firmness: 'Firm rubber' },
+  jelly: { name: 'Jelly', color: '#97c5ef', dark: '#537fa8', radius: 48, soft: true, stiffness: 0.045, pressure: 0.00032, restitution: 0.40, rebound: 0.95, firmness: 'Very soft' },
+  rubber: { name: 'Rubber', color: '#f5aa9c', dark: '#ba6555', radius: 40, soft: true, stiffness: 0.12, pressure: 0.00065, restitution: 0.72, rebound: 1.35, firmness: 'Springy' },
+  water: { name: 'Water blob', color: '#b6abd9', dark: '#80709d', radius: 51, soft: true, stiffness: 0.018, pressure: 0.00024, restitution: 0.22, rebound: 0.70, firmness: 'Extra soft' },
+  bouncy: { name: 'Super ball', color: '#ebcd64', dark: '#ac8b2e', radius: 24, stiffness: 0.21, pressure: 0.0011, restitution: 0.96, rebound: 1.50, firmness: 'Firm rubber' },
   steel: { name: 'Steel ball', color: '#a6afb3', dark: '#646e73', radius: 27, stiffness: 0.88, pressure: 0.006, density: 0.012, restitution: 0.3, firmness: 'Very hard' },
   crate: { name: 'Wooden block', color: '#d7ad7c', dark: '#926d46', width: 64, height: 64, stiffness: 0.36, pressure: 0.0021, firmness: 'Hard wood' },
   plank: { name: 'Plank', color: '#c8b08b', dark: '#8c7350', width: 145, height: 20, stiffness: 0.30, pressure: 0.0018, firmness: 'Hard wood' },
