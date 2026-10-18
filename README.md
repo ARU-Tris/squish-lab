@@ -34,6 +34,8 @@ Matter.js handles mass, gravity, rotation, contact, friction, and restitution. *
 
 A normal grab applies a damped force across the object. In free space this moves the whole toy. Against a surface, contact blocks the leading particles while the hand continues pushing, so the mesh compresses naturally. Removing the hand force lets the same springs and pressure restore the shape and rebound from the surface. There are no compression jaws, hold-to-charge behavior, or release-triggered launch impulses. Mounted toys use world anchors that detach during a grab and remount on release.
 
+Signed bending, self-contact, and volume constraints resist inversion during deep corner compression. Elastic projection clears outdated solver corrections, and material damping reduces internal jitter while preserving the toy's thrown motion.
+
 Simulation runs at a fixed **120 physics steps per second**, independently of display refresh rate and time controls. Extreme velocities are bounded to keep the sandbox stable. Springy trampolines, bumper boosts, and field strengths are tuned for play. This is an approximate 2D game simulation, not an engineering or laboratory model.
 
 ## Run locally

@@ -29,8 +29,9 @@ test('a wooden block collides with the floor and settles instead of falling thro
 
 for (const kind of ['water', 'jelly', 'rubber']) {
   test(`${kind} survives sustained corner compression and unfolds after release`, () => {
+    for (let variation = 0; variation < 10; variation++) {
     const room = new PhysicsRoom(1000, 700); room.setGravity('zero');
-    const e = room.add(kind, 500, 350);
+    const e = room.add(kind, 500 + variation * 0.013, 350, { angle: variation * 0.000001 });
     room.startGrab(e, centerOf(e)); room.moveGrab({ x: -200, y: -200 });
     for (let i = 0; i < 480; i++) {
       room.step();
@@ -39,6 +40,7 @@ for (const kind of ['water', 'jelly', 'rubber']) {
     room.endGrab(); advance(room, 3);
     assert.ok(shapeTransform(e).compression < 0.03, 'a folded edge cannot remain stuck inside the blob');
     assertFiniteAndContained(room);
+    }
   });
 }
 

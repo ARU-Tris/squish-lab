@@ -243,12 +243,17 @@ export class PhysicsRoom {
     // Unconnected sides still occupy space. Self-contact and inversion
     // constraints keep a compressed boundary from passing through itself.
     const nodes = entity.nodes, count = nodes.length;
-    const move = (node, dx, dy) => Body.setPosition(node, {
-      x: Math.max(entity.nodeRadius * 0.85, Math.min(this.width - entity.nodeRadius * 0.85, node.position.x + dx)),
-      y: Math.max(entity.nodeRadius * 0.85, Math.min(this.height - entity.nodeRadius * 0.85, node.position.y + dy)),
-    });
+    const move = (node, dx, dy) => {
+      Body.setPosition(node, {
+        x: Math.max(entity.nodeRadius * 0.85, Math.min(this.width - entity.nodeRadius * 0.85, node.position.x + dx)),
+        y: Math.max(entity.nodeRadius * 0.85, Math.min(this.height - entity.nodeRadius * 0.85, node.position.y + dy)),
+      });
+      // The solver's cached correction describes the old, possibly inverted
+      // configuration. Do not replay it after an elastic projection.
+      node.constraintImpulse.x = 0; node.constraintImpulse.y = 0; node.constraintImpulse.angle = 0;
+    };
     if (entity.mat.soft) {
-      const pose = poseOf(entity), stiffness = 0.015 + entity.mat.stiffness * 0.06;
+      const pose = poseOf(entity), stiffness = 0.12 + entity.mat.stiffness * 0.30;
       for (let i = 0; i < count; i++) {
         const target = Vector.add(pose.position, Vector.rotate(entity.restPoints[i], pose.angle));
         const correction = Vector.mult(Vector.sub(target, nodes[i].position), stiffness);
@@ -258,6 +263,20 @@ export class PhysicsRoom {
     if (!entity.mat.soft && polygonArea(nodes) > entity.restArea * 0.60) return;
     for (let iteration = 0; iteration < 4; iteration++) {
       const pose = poseOf(entity);
+      if (entity.mat.soft) for (let i = 0; i < count; i++) {
+        const previous = nodes[(i + count - 1) % count], current = nodes[i], next = nodes[(i + 1) % count];
+        const chord = Vector.sub(next.position, previous.position);
+        const normal = Vector.normalise({ x: chord.y, y: -chord.x });
+        const midpoint = Vector.mult(Vector.add(previous.position, next.position), 0.5);
+        const signedBend = Vector.dot(Vector.sub(current.position, midpoint), normal);
+        if (signedBend >= 0) continue;
+        // Signed bending distinguishes a compressed edge from its mirrored,
+        // inside-out solution, which distance-only springs cannot distinguish.
+        const correction = Vector.mult(normal, Math.min(12, -signedBend * 1.2));
+        move(current, correction.x, correction.y);
+        move(previous, -correction.x * 0.5, -correction.y * 0.5);
+        move(next, -correction.x * 0.5, -correction.y * 0.5);
+      }
       const cross = (a, b, p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
       for (let i = 0; i < count; i++) for (let j = i + 2; j < count; j++) {
         if (i === 0 && j === count - 1) continue;
@@ -298,6 +317,24 @@ export class PhysicsRoom {
         if (length > 3) delta = Vector.mult(delta, 3 / length);
         move(nodes[i], delta.x, delta.y);
       }
+    }
+  }
+
+  dampDeformation(entity) {
+    if (!entity.mat.soft) return;
+    const c = centerOf(entity);
+    const velocity = entity.nodes.reduce((sum, n) => Vector.add(sum, Vector.mult(n.velocity, 1 / entity.nodes.length)), { x: 0, y: 0 });
+    let spin = 0, inertia = 0;
+    for (const n of entity.nodes) {
+      const r = Vector.sub(n.position, c), v = Vector.sub(n.velocity, velocity);
+      spin += r.x * v.y - r.y * v.x; inertia += r.x * r.x + r.y * r.y;
+    }
+    spin /= inertia || 1;
+    const damping = entity.kind === 'water' ? 0.92 : entity.kind === 'jelly' ? 0.94 : 0.97;
+    for (const n of entity.nodes) {
+      const r = Vector.sub(n.position, c);
+      const rigid = { x: velocity.x - spin * r.y, y: velocity.y + spin * r.x };
+      Body.setVelocity(n, Vector.add(rigid, Vector.mult(Vector.sub(n.velocity, rigid), damping)));
     }
   }
 
@@ -343,15 +380,6 @@ export class PhysicsRoom {
           Body.applyForce(e.nodes[i], e.nodes[i].position, { x: (after.y - before.y) * pressure / 2, y: (before.x - after.x) * pressure / 2 });
         }
       }
-      if (e.mat.soft) {
-        // Weak rest-shape elasticity unfolds a deeply compressed membrane;
-        // internal forces sum to zero and never propel its center of mass.
-        const pose = poseOf(e), recovery = 0.00002 + e.mat.stiffness * 0.00035;
-        for (let i = 0; i < e.nodes.length; i++) {
-          const b = e.nodes[i], target = Vector.add(pose.position, Vector.rotate(e.restPoints[i], pose.angle));
-          Body.applyForce(b, b.position, Vector.mult(Vector.sub(target, b.position), b.mass * recovery));
-        }
-      }
       for (const b of e.nodes) {
         if (e.fixed) Body.applyForce(b, b.position, { x: -b.mass * this.engine.gravity.x * this.engine.gravity.scale, y: -b.mass * this.engine.gravity.y * this.engine.gravity.scale });
         if (!e.fixed) {
@@ -369,7 +397,7 @@ export class PhysicsRoom {
       }
     }
     Engine.update(this.engine, STEP);
-    for (const e of this.entities) this.preserveMembrane(e);
+    for (const e of this.entities) { this.dampDeformation(e); this.preserveMembrane(e); }
     // Bound extreme impulses and repair only escaped/invalid states, never normal deformation.
     for (const e of [...this.entities]) {
       for (const b of e.nodes) {
