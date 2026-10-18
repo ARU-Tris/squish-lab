@@ -1,4 +1,4 @@
-import { centerOf } from './physics.js';
+import { centerOf, shapeTransform } from './physics.js';
 
 export class RoomRenderer {
   constructor(canvas, room) {
@@ -83,7 +83,13 @@ export class RoomRenderer {
 
   drawRigid(e, now) {
     const ctx = this.ctx, b = e.nodes[0], { mat, size, radius: r, kind } = e;
-    ctx.save(); ctx.translate(b.position.x, b.position.y); ctx.rotate(b.angle);
+    const t = shapeTransform(e);
+    ctx.save();
+    this.softPath(e);
+    ctx.fillStyle = mat.color; ctx.fill();
+    ctx.strokeStyle = mat.dark; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.clip();
+    ctx.transform(t.a, t.b, t.c, t.d, t.position.x, t.position.y);
     ctx.fillStyle = mat.color; ctx.strokeStyle = mat.dark; ctx.lineWidth = 1.2;
     if (r) {
       const g = ctx.createRadialGradient(-r * 0.4, -r * 0.4, 1, 0, 0, r * 1.4);
@@ -164,24 +170,21 @@ export class RoomRenderer {
       const c = centerOf(highlight), r = highlight.radius || Math.max(highlight.mat.width, highlight.mat.height) * highlight.size / 2;
       ctx.beginPath(); ctx.arc(c.x, c.y, r + 9, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
-    if (room.grab?.joint) {
-      const g = room.grab, p = g.joint.bodyB.position;
-      ctx.strokeStyle = '#df865c88'; ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
-      ctx.beginPath(); ctx.moveTo(g.point.x, g.point.y); ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]);
-    }
-    if (room.press) {
-      const p = room.press, r = p.entity.radius;
-      ctx.save(); ctx.strokeStyle = '#b3704e'; ctx.fillStyle = '#e8b88d66'; ctx.lineWidth = 1.5;
-      for (const jaw of p.jaws) { ctx.beginPath(); ctx.roundRect(jaw.position.x - r * 2.4, jaw.position.y - 7, r * 4.8, 14, 5); ctx.fill(); ctx.stroke(); }
-      const x = p.center.x - 46, y = Math.min(h - 30, p.center.y + r + 34);
-      ctx.fillStyle = '#fffaf0'; ctx.beginPath(); ctx.roundRect(x - 8, y - 12, 108, 31, 9); ctx.fill();
-      ctx.fillStyle = '#d8cbb8'; ctx.fillRect(x, y + 3, 92, 4); ctx.fillStyle = '#eb784a'; ctx.fillRect(x, y + 3, 92 * p.charge, 4);
-      ctx.font = 'bold 9px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`SQUISH POWER ${Math.round(p.charge * 100)}%`, p.center.x, y - 1);
-      const dx = p.origin.x - p.point.x, dy = p.origin.y - p.point.y;
-      const len = Math.hypot(dx, dy); const dir = len > 26 ? { x: dx / len, y: dy / len } : { x: 0, y: -1 };
-      const end = { x: p.center.x + dir.x * (70 + p.charge * 70), y: p.center.y + dir.y * (70 + p.charge * 70) };
-      ctx.strokeStyle = '#e48055'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(p.center.x, p.center.y); ctx.lineTo(end.x, end.y); ctx.stroke(); ctx.setLineDash([]);
-      const angle = Math.atan2(dir.y, dir.x); ctx.translate(end.x, end.y); ctx.rotate(angle); ctx.beginPath(); ctx.moveTo(-10, -5); ctx.lineTo(0, 0); ctx.lineTo(-10, 5); ctx.stroke(); ctx.restore();
+    if (room.grab) {
+      const g = room.grab, c = centerOf(g.entity), p = g.point;
+      const compression = shapeTransform(g.entity).compression;
+      ctx.save();
+      ctx.strokeStyle = compression > 0.04 ? '#e58054' : '#df865c88'; ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#fff9ec'; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (compression > 0.025) {
+        const label = `SQUISH ${Math.round(compression * 100)}%`;
+        const x = Math.max(55, Math.min(w - 55, c.x));
+        const y = Math.max(35, Math.min(h - 30, c.y - (g.entity.radius || g.entity.mat.height * g.entity.size / 2) - 22));
+        ctx.fillStyle = '#fffbf1ee'; ctx.beginPath(); ctx.roundRect(x - 49, y - 14, 98, 25, 7); ctx.fill();
+        ctx.fillStyle = '#b7744d'; ctx.font = 'bold 9px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(label, x, y + 2);
+      }
+      ctx.restore();
     }
     const decay = Math.min(dt, 0.05);
     for (const p of this.particles) {
@@ -197,7 +200,7 @@ export class RoomRenderer {
     }
     this.rings = this.rings.filter(r => r.life > 0); ctx.globalAlpha = 1;
     for (const e of room.entities.filter(e => e.kind === 'fan')) {
-      const c = e.nodes[0].position;
+      const c = centerOf(e);
       ctx.strokeStyle = '#8cafaa66'; ctx.lineWidth = 1.2;
       for (let i = 0; i < 5; i++) {
         const offset = (now * 0.065 + i * 57) % 280;

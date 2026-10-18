@@ -6,8 +6,8 @@ A little room for big experiments. A free browser physics playground with soft e
 
 ## Play
 
-- **Grab:** drag anything and let go to throw it. Fixed ramps and machines can be repositioned, too.
-- **Squish:** hold a jelly, rubber, or water blob to compress it between a pair of jaws. Pull back to aim; release to launch. Without a pull, it launches upward.
+- **Grab & squish:** grab any object and push it into a wall, the floor, ceiling, or another toy. Keep pushing to compress it; let go to let its springs restore its shape. Move quickly and let go to throw it.
+- **Every toy is elastic.** Water and jelly compress easily, rubber resists more, and wood and metal need much more pressure. Mounted ramps and machines can also be moved and compressed with the same grab.
 - **Blast:** click to send nearby objects flying.
 - **Erase:** remove individual objects. Undo restores your last edit.
 - Click the shelf to add toys, or drag a toy into the room to place it precisely. On phones, swipe the toy shelf sideways.
@@ -18,7 +18,7 @@ A little room for big experiments. A free browser physics playground with soft e
 
 | Key | Action |
 | --- | --- |
-| `1`–`4` | Grab, squish, blast, erase |
+| `1`–`3` | Grab & squish, blast, erase |
 | `Space` | Pause / resume |
 | `R` | Reset the current scene |
 | `B` | A surprise shower of balls |
@@ -30,9 +30,11 @@ A little room for big experiments. A free browser physics playground with soft e
 
 ## Physics
 
-Matter.js handles rigid-body mass, gravity, rotation, contact, friction, and restitution. Each soft ball is a closed membrane of **20 colliding particles**, connected by edge, bending, and internal spring constraints. An area-based internal pressure force resists collapse. Materials use different spring stiffness, pressure, and restitution, so they deform differently. Grabs use spring constraints and squeezing uses two actual colliding platens, rather than scaling a circle drawing.
+Matter.js handles mass, gravity, rotation, contact, friction, and restitution. **Every toy uses an elastic collision mesh**: 20 membrane particles for soft blobs, 16 for firm balls, and a sampled rectangular perimeter for blocks and machines. Edge, bending, and internal spring constraints preserve shape, while an area-based pressure force resists collapse. Hard materials use stronger springs and extra internal links. The drawn outline follows the physical membrane; markings deform with it.
 
-Simulation runs at a fixed **120 physics steps per second**, independently of display refresh rate and time controls. Extreme velocities are bounded to keep the sandbox stable. Launch impulses, springy trampolines, bumper boosts, and field strengths are tuned for play. This is an approximate 2D game simulation, not an engineering or laboratory model.
+A normal grab applies a damped force across the object. In free space this moves the whole toy. Against a surface, contact blocks the leading particles while the hand continues pushing, so the mesh compresses naturally. Removing the hand force lets the same springs and pressure restore the shape and rebound from the surface. There are no compression jaws, hold-to-charge behavior, or release-triggered launch impulses. Mounted toys use world anchors that detach during a grab and remount on release.
+
+Simulation runs at a fixed **120 physics steps per second**, independently of display refresh rate and time controls. Extreme velocities are bounded to keep the sandbox stable. Springy trampolines, bumper boosts, and field strengths are tuned for play. This is an approximate 2D game simulation, not an engineering or laboratory model.
 
 ## Run locally
 
@@ -57,9 +59,9 @@ GitHub Pages serves the production build. The deploy workflow runs the physics t
 
 ## Validation
 
-The Node test suite checks equal gravitational acceleration across masses, floor contact, soft-body compression and recovery for all three elastic materials, release direction, fan and magnet behavior, fixed-toy movement, save/import preservation, atomic rejection of malformed imports, all four presets, and a 65-object stress scene with repeated blasts and a viewport resize.
+The 35 Node tests check equal gravitational acceleration across masses, floor contact, natural grab compression and recovery for **all 13 toy types**, all four room walls, sustained corner compression and unfolding, compression against another object, progressively stronger material resistance, free-space grabbing, spring-driven rebound without release impulses, fan and magnet behavior, mounted-toy movement, save/import preservation, version 1 saved-room migration, atomic rejection of malformed imports, all four presets, and a 65-object stress scene with repeated blasts and a viewport resize.
 
-Browser review covers desktop and 390px phone layouts, a real hold/release launch, adding toys, undo, scene switching, gravity, trails, slow motion, pause, and local save/restore. Performance depends on device and object count. Mobile layout has been checked in a desktop browser viewport; physical touch hardware has not been tested.
+Browser review covers desktop and 390px phone layouts, normal dragging against a wall, adding toys, undo, scene switching, gravity, trails, slow motion, pause, and local save/restore. Existing version 1 saves continue to open and are upgraded to elastic meshes when loaded. Performance depends on device and object count. Mobile layout has been checked in a desktop browser viewport; physical touch hardware has not been tested.
 
 ## License
 

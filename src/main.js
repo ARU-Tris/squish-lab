@@ -11,8 +11,8 @@ const groups = [
   { title: 'MAKE IT INTERESTING', items: ['trampoline', 'bumper', 'fan', 'magnet'] },
 ];
 const sceneNames = { sandbox: 'The play room', bowling: 'Knock ’em down', marbles: 'Marble mischief', zero: 'Zero-G daydream' };
-const toolNames = { grab: 'Grab & move', squeeze: 'Squish & launch', blast: 'Make a blast', erase: 'Remove objects' };
-const toolHints = { grab: 'Grab anything. Give it a fling.', squeeze: 'Hold a blob to squish. Pull back to aim. Release to launch!', blast: 'Click anywhere to send things flying.', erase: 'Click an object to remove it. Undo brings it back.' };
+const toolNames = { grab: 'Grab & squish', blast: 'Make a blast', erase: 'Remove objects' };
+const toolHints = { grab: 'Grab anything. Push into a wall to squish. Let go to spring back.', blast: 'Click anywhere to send things flying.', erase: 'Click an object to remove it. Undo brings it back.' };
 
 $('#app').innerHTML = `
   <header class="app-header">
@@ -28,9 +28,9 @@ $('#app').innerHTML = `
     <aside class="shelf" aria-label="Toy shelf">
       <div class="shelf-heading"><div><span class="eyebrow">YOUR TOY BOX</span><h1>Good things<br>to mess with.</h1></div><span class="shelf-decoration">↘</span></div>
       <p class="shelf-note">Click to add. Drag to place.</p>
-      <div class="toy-groups">${groups.map(group => `<section class="toy-group"><h2>${group.title}</h2><div class="toy-grid">${group.items.map(kind => `<button class="toy" data-kind="${kind}" draggable="true" title="Add ${MATERIALS[kind].name}${MATERIALS[kind].soft ? ' — squeeze me!' : MATERIALS[kind].fixed ? ' — stays where you put it' : ''}" aria-label="Add ${MATERIALS[kind].name}"><span class="toy-image">${toyIcon(kind)}</span><span>${MATERIALS[kind].name}</span>${MATERIALS[kind].soft ? '<i class="soft-dot" title="Squishable"></i>' : ''}</button>`).join('')}</div></section>`).join('')}</div>
+      <div class="toy-groups">${groups.map(group => `<section class="toy-group"><h2>${group.title}</h2><div class="toy-grid">${group.items.map(kind => `<button class="toy" data-kind="${kind}" draggable="true" title="Add ${MATERIALS[kind].name} — ${MATERIALS[kind].firmness}. Push into a wall to squish." aria-label="Add ${MATERIALS[kind].name}"><span class="toy-image">${toyIcon(kind)}</span><span>${MATERIALS[kind].name}</span>${MATERIALS[kind].soft ? '<i class="soft-dot" title="Extra squishy"></i>' : ''}</button>`).join('')}</div></section>`).join('')}</div>
       <button id="surprise" class="surprise-button">${icon('plus', 15)} A little surprise</button>
-      <div class="shelf-foot"><span class="soft-dot"></span> means delightfully squishable</div>
+      <div class="shelf-foot"><span class="soft-dot"></span> All toys squish. These squish more.</div>
     </aside>
     <section class="lab" aria-label="Physics playground">
       <div class="room-heading">
@@ -40,14 +40,14 @@ $('#app').innerHTML = `
       <div class="arena" id="arena">
         <div class="room-intro"><span class="handwritten">permission to play.</span><p>A little room.<br><em>Endless possibilities.</em></p><span class="intro-caption">SQUISH IT. STACK IT. SEE WHAT HAPPENS.</span></div>
         <div class="room-label">EXPERIMENT NO. <span id="experiment-number">001</span><span class="corner-plus">+</span></div>
-        <canvas id="room" aria-label="Interactive physics room. Drag objects to throw them. Use Squish on elastic balls to compress and launch." tabindex="0"></canvas>
+        <canvas id="room" aria-label="Interactive physics room. Grab any toy and push it into a wall, floor, or another object to squish. Let go to spring back." tabindex="0"></canvas>
         <div id="pause-overlay" class="pause-badge" hidden>${icon('pause', 14)} TAKING A BREATHER</div>
         <div id="object-info" class="object-info" hidden></div>
         <div class="arena-bottom-label"><span>GO ON, MAKE A MESS.</span><span>THERE ARE NO WRONG ANSWERS ↗</span></div>
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
       </div>
       <div class="play-controls">
-        <div class="tool-switch" role="group" aria-label="Interaction tools">${[['grab','Grab'],['squeeze','Squish'],['blast','Blast'],['erase','Erase']].map(([key, label], i) => `<button class="tool ${i === 0 ? 'active' : ''}" data-tool="${key}" aria-label="${toolNames[key]}" aria-pressed="${i === 0}" title="${toolNames[key]} (${i + 1})">${icon(key, 19)}<span>${label}</span><kbd>${i + 1}</kbd></button>`).join('')}</div>
+        <div class="tool-switch" role="group" aria-label="Interaction tools">${[['grab','Grab & squish'],['blast','Blast'],['erase','Erase']].map(([key, label], i) => `<button class="tool ${i === 0 ? 'active' : ''}" data-tool="${key}" aria-label="${toolNames[key]}" aria-pressed="${i === 0}" title="${toolNames[key]} (${i + 1})">${icon(key, 19)}<span>${label}</span><kbd>${i + 1}</kbd></button>`).join('')}</div>
         <div class="transport"><button id="undo" class="icon-button" aria-label="Undo last edit" title="Undo last edit (Ctrl+Z)" disabled>${icon('undo', 18)}</button><span class="divider"></span><button id="pause" class="icon-button" aria-label="Pause simulation" title="Pause / resume (Space)">${icon('pause', 20)}</button><button id="step" class="icon-button" aria-label="Advance one physics frame" title="Advance one frame">${icon('step', 18)}</button><div class="settings-wrap"><button id="settings-button" class="icon-button" aria-label="Physics settings" aria-expanded="false" title="Physics settings">${icon('settings', 19)}</button><div id="settings" class="settings-panel" hidden>
           <div class="panel-title">A few laws of nature <button class="close-settings icon-button" aria-label="Close settings">${icon('close', 15)}</button></div>
           <label class="setting-label" for="gravity">Gravity <span id="gravity-value">Earth · 1 g</span></label><div class="gravity-buttons" role="group" aria-label="Gravity">${[['earth','Earth'],['moon','Moon'],['zero','Zero G'],['reverse','Reverse']].map(([k,v])=>`<button data-gravity="${k}" class="${k === 'earth' ? 'active' : ''}">${v}</button>`).join('')}</div>
@@ -62,7 +62,7 @@ $('#app').innerHTML = `
     </section>
   </main>
   <footer class="app-footer"><span>A tiny playground for your curious side.</span><span>Built with physics. Best enjoyed without a plan. <span class="footer-flower">✳</span></span></footer>
-  <dialog id="help-dialog"><button id="close-help" class="dialog-close icon-button" aria-label="Close how to play">${icon('close')}</button><div class="help-mark">${toyIcon('jelly')}</div><span class="eyebrow">WELCOME TO YOUR LITTLE LAB</span><h2>Serious physics.<br>Unserious experiments.</h2><p>There’s nothing to win. Just a room full of things that are really fun to mess with.</p><div class="help-grid"><div>${icon('hand',24)}<h3>Grab & fling</h3><p>Drag anything around. Move quickly and let go to throw it. Fixed toys can be moved, too.</p></div><div>${icon('squeeze',24)}<h3>Squish & launch</h3><p>Choose Squish, then hold a soft blob. Pull back to aim, and release to send it flying.</p></div><div>${icon('plus',24)}<h3>Make it yours</h3><p>Add toys from the shelf. Try a trampoline, or use a magnet to attract the steel balls.</p></div><div>${icon('settings',24)}<h3>Bend the rules</h3><p>Try Moon gravity, slow time, motion trails, or a ready-made scene. Save your favorite mess.</p></div></div><div class="shortcut-row"><span><kbd>1</kbd>–<kbd>4</kbd> Tools</span><span><kbd>Space</kbd> Pause</span><span><kbd>R</kbd> Reset</span><span><kbd>B</kbd> Ball rain</span></div><button id="start-playing" class="button primary">Let’s make a mess ${icon('plus',17)}</button><small>Mass, friction, springs and pressure bring the toys to life. A playful 2D simulation; scale and launch assists are tuned for fun.</small></dialog>
+  <dialog id="help-dialog"><button id="close-help" class="dialog-close icon-button" aria-label="Close how to play">${icon('close')}</button><div class="help-mark">${toyIcon('jelly')}</div><span class="eyebrow">WELCOME TO YOUR LITTLE LAB</span><h2>Serious physics.<br>Unserious experiments.</h2><p>There’s nothing to win. Just a room full of things that are really fun to mess with.</p><div class="help-grid"><div>${icon('hand',24)}<h3>Grab, push & squish</h3><p>Grab any toy and push it into a wall, the floor, or another toy. Keep pushing to compress; release to spring back.</p></div><div>${icon('squeeze',24)}<h3>Feel the difference</h3><p>Everything is elastic. Jelly squishes easily; rubber resists more; wood and metal need much more force. A faster fling still throws.</p></div><div>${icon('plus',24)}<h3>Make it yours</h3><p>Add toys from the shelf. Try a trampoline, or use a magnet to attract the steel balls.</p></div><div>${icon('settings',24)}<h3>Bend the rules</h3><p>Try Moon gravity, slow time, motion trails, or a ready-made scene. Save your favorite mess.</p></div></div><div class="shortcut-row"><span><kbd>1</kbd>–<kbd>3</kbd> Tools</span><span><kbd>Space</kbd> Pause</span><span><kbd>R</kbd> Reset</span><span><kbd>B</kbd> Ball rain</span></div><button id="start-playing" class="button primary">Let’s make a mess ${icon('plus',17)}</button><small>Mass, friction, springs and pressure bring every toy to life. Compression and rebound come from contact with the room and other toys.</small></dialog>
   <input id="import-file" type="file" accept="application/json,.json" hidden/>
 `;
 
@@ -101,7 +101,6 @@ function chooseTool(next) {
   releasePointer(false); tool = next; renderer.tool = tool;
   document.querySelectorAll('[data-tool]').forEach(el => { const isActive = el.dataset.tool === tool; el.classList.toggle('active', isActive); el.setAttribute('aria-pressed', isActive); });
   $('#hint').textContent = toolHints[tool]; $('#room').dataset.tool = tool;
-  if (tool === 'squeeze') notify('Hold a soft blob. Pull back to aim. Let go!');
 }
 
 function setPause(value) {
@@ -122,23 +121,14 @@ function syncInfo() {
   const el = $('#object-info');
   if (selected && room.entities.includes(selected)) {
     el.hidden = false;
-    el.innerHTML = `<span class="info-dot" style="background:${selected.mat.color}"></span><strong>${selected.mat.name}</strong><span>${selected.mat.soft ? 'Soft & squishable' : selected.fixed ? 'Stays put · drag to move' : 'Solid body'}</span><button class="rotate-selected icon-button" aria-label="Rotate selected object" title="Rotate object by 15 degrees">↻</button><button class="delete-selected icon-button" aria-label="Remove selected object" title="Remove selected object">${icon('trash',14)}</button>`;
+    el.innerHTML = `<span class="info-dot" style="background:${selected.mat.color}"></span><strong>${selected.mat.name}</strong><span>${selected.mat.firmness}</span><button class="rotate-selected icon-button" aria-label="Rotate selected object" title="Rotate object by 15 degrees">↻</button><button class="delete-selected icon-button" aria-label="Remove selected object" title="Remove selected object">${icon('trash',14)}</button>`;
     $('.delete-selected').onclick = () => { remember(); room.remove(selected); selected = null; syncInfo(); };
     $('.rotate-selected').onclick = () => {
       remember();
-      const c = centerOf(selected), angle = Math.PI / 12;
-      selected.nodes.forEach(b => {
-        const dx = b.position.x - c.x, dy = b.position.y - c.y;
-        MatterBody.setPosition(b, { x: c.x + dx * Math.cos(angle) - dy * Math.sin(angle), y: c.y + dx * Math.sin(angle) + dy * Math.cos(angle) });
-        MatterBody.setAngle(b, b.angle + angle);
-      });
+      room.rotate(selected, Math.PI / 12);
     };
   } else { el.hidden = true; selected = null; }
 }
-
-// Keep all simulation mutations in the physics module except this direct rotation command.
-import Matter from 'matter-js';
-const MatterBody = Matter.Body;
 
 function addToy(kind, x, y) {
   remember();
@@ -179,11 +169,11 @@ room.onBurst = (point, color, count) => { renderer.burst(point, color, count); t
 
 function coords(event) {
   const rect = $('#room').getBoundingClientRect();
-  return { x: Math.max(3, Math.min(room.width - 3, event.clientX - rect.left)), y: Math.max(3, Math.min(room.height - 3, event.clientY - rect.top)) };
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function releasePointer(launch = true) {
-  room.endGrab(); room.releasePress(launch);
+function releasePointer() {
+  room.endGrab();
   pointerDown = false;
   if (activePointer != null && $('#room').hasPointerCapture(activePointer)) $('#room').releasePointerCapture(activePointer);
   activePointer = null; $('#room').classList.remove('dragging');
@@ -197,19 +187,16 @@ $('#room').addEventListener('pointerdown', e => {
   if (!target) { selected = null; syncInfo(); return; }
   selected = target; syncInfo();
   if (tool === 'erase') { remember(); room.remove(target); selected = null; syncInfo(); return; }
-  if (paused && tool === 'squeeze') { notify('Resume time to squish & launch.'); return; }
-  if (tool === 'squeeze' && !target.mat.soft) { notify('Try a jelly, rubber, or water blob — those are squishable.'); return; }
   remember();
   pointerDown = true; activePointer = e.pointerId; $('#room').setPointerCapture(e.pointerId); $('#room').classList.add('dragging');
-  if (tool === 'grab') room.startGrab(target, p);
-  else room.startPress(target, p);
+  room.startGrab(target, p);
+  if (paused) notify('Time is paused. Move toys, then resume to squish.');
   $('.room-intro').classList.add('faded');
 });
 $('#room').addEventListener('pointermove', e => {
   const p = coords(e); renderer.pointer = p;
   if (pointerDown && e.pointerId === activePointer) {
-    if (room.press) room.press.point = p;
-    else if (paused && selected) { const c = centerOf(selected); room.translate(selected, p.x - c.x, p.y - c.y); }
+    if (paused && selected) { const c = centerOf(selected); room.translate(selected, p.x - c.x, p.y - c.y); }
     else room.moveGrab(p);
   }
   hover = room.pick(p.x, p.y); renderer.hover = hover;
@@ -315,7 +302,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
   if (e.code === 'Space') { e.preventDefault(); setPause(!paused); }
-  if (['1','2','3','4'].includes(e.key)) { e.preventDefault(); chooseTool(['grab','squeeze','blast','erase'][Number(e.key) - 1]); }
+  if (['1','2','3'].includes(e.key)) { e.preventDefault(); chooseTool(['grab','blast','erase'][Number(e.key) - 1]); }
   if (e.key.toLowerCase() === 'r') $('#reset').click();
   if (e.key.toLowerCase() === 'b') ballRain();
   if (e.key.toLowerCase() === 'g') { remember(); const modes = ['earth','moon','zero','reverse']; room.setGravity(modes[(modes.indexOf(room.gravity) + 1) % 4]); syncGravity(); notify(`Gravity: ${room.gravity}`); }

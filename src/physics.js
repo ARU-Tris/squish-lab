@@ -3,21 +3,8 @@ import Matter from 'matter-js';
 const { Engine, Bodies, Body, Composite, Constraint, Vector } = Matter;
 export const STEP = 1000 / 120;
 export const MAX_OBJECTS = 65;
-export const MATERIALS = {
-  jelly: { name: 'Jelly', color: '#97c5ef', dark: '#537fa8', radius: 48, soft: true, stiffness: 0.045, pressure: 0.00032, restitution: 0.40 },
-  rubber: { name: 'Rubber', color: '#f5aa9c', dark: '#ba6555', radius: 40, soft: true, stiffness: 0.12, pressure: 0.00065, restitution: 0.72 },
-  water: { name: 'Water blob', color: '#b6abd9', dark: '#80709d', radius: 51, soft: true, stiffness: 0.018, pressure: 0.00024, restitution: 0.22 },
-  bouncy: { name: 'Super ball', color: '#ebcd64', dark: '#ac8b2e', radius: 24, restitution: 0.96 },
-  steel: { name: 'Steel ball', color: '#a6afb3', dark: '#646e73', radius: 27, restitution: 0.3 },
-  crate: { name: 'Wooden block', color: '#d7ad7c', dark: '#926d46', width: 64, height: 64 },
-  plank: { name: 'Plank', color: '#c8b08b', dark: '#8c7350', width: 145, height: 20 },
-  ramp: { name: 'Ramp', color: '#d5d8d0', dark: '#969f8c', width: 150, height: 16, fixed: true },
-  trampoline: { name: 'Trampoline', color: '#91bba4', dark: '#5a886b', width: 132, height: 18, fixed: true, restitution: 1.18 },
-  bumper: { name: 'Bumper', color: '#f6c15e', dark: '#b98531', radius: 33, fixed: true },
-  fan: { name: 'Fan', color: '#a6c5c5', dark: '#5f8c8c', width: 60, height: 45, fixed: true },
-  magnet: { name: 'Magnet', color: '#df9295', dark: '#a4535d', width: 54, height: 48, fixed: true },
-  pin: { name: 'Bowling pin', color: '#faf7ea', dark: '#9b9b8a', width: 22, height: 73 },
-};
+import { MATERIALS, restShape } from './materials.js';
+export { MATERIALS };
 
 export function polygonArea(nodes) {
   let area = 0;
@@ -32,6 +19,33 @@ export function centerOf(entity) {
   return entity.nodes.reduce((p, b) => ({ x: p.x + b.position.x / entity.nodes.length, y: p.y + b.position.y / entity.nodes.length }), { x: 0, y: 0 });
 }
 
+export function poseOf(entity) {
+  const c = centerOf(entity);
+  let dot = 0, cross = 0;
+  for (let i = 0; i < entity.nodes.length; i++) {
+    const p = entity.restPoints[i], q = Vector.sub(entity.nodes[i].position, c);
+    dot += p.x * q.x + p.y * q.y;
+    cross += p.x * q.y - p.y * q.x;
+  }
+  return { position: c, angle: Math.atan2(cross, dot) };
+}
+
+export function shapeTransform(entity) {
+  const position = centerOf(entity);
+  let xx = 0, yy = 0, xy = 0, ux = 0, uy = 0, vx = 0, vy = 0;
+  for (let i = 0; i < entity.nodes.length; i++) {
+    const p = entity.restPoints[i], q = Vector.sub(entity.nodes[i].position, position);
+    xx += p.x * p.x; yy += p.y * p.y; xy += p.x * p.y;
+    ux += q.x * p.x; uy += q.x * p.y; vx += q.y * p.x; vy += q.y * p.y;
+  }
+  const det = xx * yy - xy * xy || 1;
+  const a = (ux * yy - uy * xy) / det, c = (uy * xx - ux * xy) / det;
+  const b = (vx * yy - vy * xy) / det, d = (vy * xx - vx * xy) / det;
+  const trace = a * a + b * b + c * c + d * d;
+  const minStretch = Math.sqrt(Math.max(0, (trace - Math.sqrt(Math.max(0, trace * trace - 4 * (a * d - b * c) ** 2))) / 2));
+  return { position, a, b, c, d, compression: Math.max(0, Math.min(1, 1 - minStretch)) };
+}
+
 export class PhysicsRoom {
   constructor(width = 1200, height = 740) {
     this.width = width;
@@ -42,20 +56,24 @@ export class PhysicsRoom {
     this.gravity = 'earth';
     this.elapsed = 0;
     this.grab = null;
-    this.press = null;
     this.onImpact = null;
     this.onBurst = null;
     Matter.Events.on(this.engine, 'collisionStart', ({ pairs }) => {
+      const boosted = new Set();
       for (const pair of pairs) {
         const a = pair.bodyA, b = pair.bodyB;
         const impact = Vector.magnitude(Vector.sub(a.velocity, b.velocity));
         if (impact > 2.2) this.onImpact?.(a.position, Math.min(impact / 18, 1));
         const bumper = a.plugin.kind === 'bumper' ? a : b.plugin.kind === 'bumper' ? b : null;
+        if (!bumper) continue;
         const other = bumper === a ? b : a;
-        if (bumper && !other.isStatic) {
-          const dir = Vector.normalise(Vector.sub(other.position, bumper.position));
-          Body.setVelocity(other, Vector.add(other.velocity, Vector.mult(dir, 7)));
-          bumper.plugin.flash = 1;
+        const entity = this.entities.find(e => e.id === other.plugin.entity);
+        if (entity && !entity.fixed && !boosted.has(entity.id)) {
+          boosted.add(entity.id);
+          const bumperEntity = this.entities.find(e => e.id === bumper.plugin.entity);
+          const dir = Vector.normalise(Vector.sub(centerOf(entity), centerOf(bumperEntity)));
+          entity.nodes.forEach(n => Body.setVelocity(n, Vector.add(n.velocity, Vector.mult(dir, 7))));
+          bumperEntity.nodes[0].plugin.flash = 1;
         }
       }
     });
@@ -78,7 +96,6 @@ export class PhysicsRoom {
 
   resize(width, height) {
     this.endGrab();
-    this.releasePress(false);
     const sx = width / this.width, sy = height / this.height;
     for (const entity of this.entities) {
       const c = centerOf(entity);
@@ -87,6 +104,7 @@ export class PhysicsRoom {
     this.width = width;
     this.height = height;
     this.makeWalls();
+    for (const entity of this.entities) if (entity.fixed) this.mount(entity);
   }
 
   add(kind, x, y, options = {}) {
@@ -97,116 +115,190 @@ export class PhysicsRoom {
     const entity = { id: ++this.serial, kind, mat, size, radius, nodes: [], constraints: [], fixed: mat.fixed || false, age: 0, trail: [] };
     x = Math.max(radius + 12, Math.min(this.width - radius - 12, x));
     y = Math.max(radius + 12, Math.min(this.height - radius - 12, y));
-    if (mat.soft) {
-      const count = 20, group = Body.nextGroup(true);
-      entity.nodeRadius = radius * 0.165;
-      const ring = radius - entity.nodeRadius;
-      for (let i = 0; i < count; i++) {
-        const angle = i / count * Math.PI * 2;
-        const node = Bodies.circle(x + Math.cos(angle) * ring, y + Math.sin(angle) * ring, entity.nodeRadius, {
-          collisionFilter: { group }, friction: 0.5, frictionAir: 0.008, restitution: mat.restitution, density: 0.0018, slop: 0.1,
-        });
-        node.plugin.entity = entity.id;
-        entity.nodes.push(node);
-      }
-      const connect = (i, j, stiffness, damping) => entity.constraints.push(Constraint.create({ bodyA: entity.nodes[i], bodyB: entity.nodes[j], stiffness, damping }));
-      for (let i = 0; i < count; i++) {
-        connect(i, (i + 1) % count, 0.8, 0.035);
-        connect(i, (i + 2) % count, 0.18, 0.015);
-        if (i < count / 2) connect(i, i + count / 2, mat.stiffness, 0.015);
-      }
-      entity.restArea = polygonArea(entity.nodes);
-    } else {
-      const common = { isStatic: entity.fixed, friction: 0.6, frictionAir: 0.003, restitution: mat.restitution ?? 0.13, density: kind === 'steel' ? 0.012 : 0.0018, chamfer: { radius: kind === 'pin' ? 9 : 5 } };
-      const body = radius ? Bodies.circle(x, y, radius, common) : Bodies.rectangle(x, y, mat.width * size, mat.height * size, common);
-      body.plugin.entity = entity.id;
-      body.plugin.kind = kind;
-      if (kind === 'ramp') Body.setAngle(body, -0.28);
-      if (options.angle != null && Number.isFinite(options.angle)) Body.setAngle(body, options.angle);
-      entity.nodes.push(body);
+    const shape = restShape(mat, size), count = shape.points.length, group = Body.nextGroup(true);
+    entity.restPoints = shape.points;
+    entity.nodeRadius = shape.nodeRadius;
+    entity.mounts = [];
+    const angle = options.angle ?? (kind === 'ramp' ? -0.28 : 0);
+    const area = radius ? Math.PI * radius * radius : mat.width * mat.height * size * size;
+    const mass = area * (mat.density ?? (mat.soft ? 0.001 : 0.0018));
+    for (const local of shape.points) {
+      const rotated = Vector.rotate(local, angle);
+      const node = Bodies.circle(x + rotated.x, y + rotated.y, entity.nodeRadius, {
+        collisionFilter: { group }, friction: mat.soft ? 0.5 : 0.6, frictionAir: mat.soft ? 0.008 : 0.003,
+        restitution: mat.restitution ?? 0.13, slop: 0.08,
+      });
+      Body.setMass(node, mass / count);
+      node.plugin.entity = entity.id;
+      entity.nodes.push(node);
     }
+    const links = new Set();
+    const connect = (i, j, stiffness, damping = 0.025) => {
+      const key = [Math.min(i,j), Math.max(i,j)].join(':');
+      if (i === j || links.has(key)) return;
+      links.add(key);
+      entity.constraints.push(Constraint.create({ bodyA: entity.nodes[i], bodyB: entity.nodes[j], stiffness, damping }));
+    };
+    for (let i = 0; i < count; i++) {
+      connect(i, (i + 1) % count, 0.8);
+      connect(i, (i + 2) % count, mat.soft ? 0.18 : Math.max(0.3, mat.stiffness));
+      connect(i, (i + Math.floor(count / 2)) % count, mat.stiffness);
+      if (!mat.soft) {
+        connect(i, (i + Math.floor(count / 3)) % count, mat.stiffness * 0.75);
+        connect(i, (i + Math.floor(count / 2) + 2) % count, mat.stiffness * 0.75);
+      }
+    }
+    entity.restArea = polygonArea(entity.nodes);
     entity.nodes.forEach(node => { node.plugin.kind = kind; });
     Composite.add(this.engine.world, [...entity.nodes, ...entity.constraints]);
     this.entities.push(entity);
+    if (entity.fixed) this.mount(entity);
     return entity;
   }
 
-  translate(entity, x, y) { entity.nodes.forEach(b => Body.translate(b, { x, y })); }
+  translate(entity, x, y) {
+    entity.nodes.forEach(b => Body.translate(b, { x, y }));
+    for (const mount of entity.mounts) { mount.pointA.x += x; mount.pointA.y += y; }
+  }
 
   remove(entity) {
     if (this.grab?.entity === entity) this.endGrab();
-    if (this.press?.entity === entity) this.releasePress(false);
-    Composite.remove(this.engine.world, [...entity.nodes, ...entity.constraints]);
+    Composite.remove(this.engine.world, [...entity.nodes, ...entity.constraints, ...entity.mounts]);
     this.entities = this.entities.filter(e => e !== entity);
   }
 
   clear() {
-    this.endGrab(); this.releasePress(false);
+    this.endGrab();
     for (const e of [...this.entities]) this.remove(e);
   }
 
   pick(x, y) {
     for (const e of [...this.entities].reverse()) {
-      if (e.mat.soft) {
-        const c = centerOf(e);
-        if (Math.hypot(c.x - x, c.y - y) < e.radius * 1.25) return e;
+      // Test the enclosed material as well as the membrane particles.
+      let inside = false;
+      for (let i = 0, j = e.nodes.length - 1; i < e.nodes.length; j = i++) {
+        const a = e.nodes[i].position, b = e.nodes[j].position;
+        if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
       }
-      if (Matter.Query.point(e.nodes, { x, y }).length) return e;
+      if (inside || Matter.Query.point(e.nodes, { x, y }).length) return e;
     }
     return null;
+  }
+
+  mount(entity) {
+    Composite.remove(this.engine.world, entity.mounts);
+    const c = centerOf(entity), angle = poseOf(entity).angle;
+    const points = entity.restPoints.map(p => Vector.rotate(p, angle));
+    const xExtent = Math.max(...points.map(p => Math.abs(p.x))) + entity.nodeRadius + 1;
+    const yExtent = Math.max(...points.map(p => Math.abs(p.y))) + entity.nodeRadius + 1;
+    const origin = { x: Math.max(xExtent, Math.min(this.width - xExtent, c.x)), y: Math.max(yExtent, Math.min(this.height - yExtent, c.y)) };
+    entity.mounts = entity.nodes.map((b, i) => Constraint.create({ pointA: Vector.add(origin, points[i]), bodyB: b, length: 0, stiffness: 0.28, damping: 0.1 }));
+    Composite.add(this.engine.world, entity.mounts);
+  }
+
+  rotate(entity, angle) {
+    const c = centerOf(entity);
+    entity.nodes.forEach(b => Body.setPosition(b, Vector.add(c, Vector.rotate(Vector.sub(b.position, c), angle))));
+    if (entity.fixed) this.mount(entity);
   }
 
   startGrab(entity, point) {
     this.endGrab();
     if (entity.fixed) {
-      this.grab = { entity, point, offset: Vector.sub(centerOf(entity), point) };
-      return;
+      Composite.remove(this.engine.world, entity.mounts);
+      entity.mounts = [];
     }
-    const node = entity.nodes.reduce((best, b) => Vector.magnitudeSquared(Vector.sub(b.position, point)) < Vector.magnitudeSquared(Vector.sub(best.position, point)) ? b : best);
-    const offset = entity.mat.soft ? { x: 0, y: 0 } : Vector.rotate(Vector.sub(point, node.position), -node.angle);
-    const joint = Constraint.create({ pointA: { ...point }, bodyB: node, pointB: offset, stiffness: entity.mat.soft ? 0.09 : 0.16, damping: 0.055, length: entity.mat.soft ? Vector.magnitude(Vector.sub(point, node.position)) : 0 });
-    Composite.add(this.engine.world, joint);
-    this.grab = { entity, joint, point };
+    this.grab = { entity, point: { ...point }, offset: Vector.sub(centerOf(entity), point), acceleration: { x: 0, y: 0 } };
   }
 
   moveGrab(point) {
-    if (!this.grab) return;
-    this.grab.point = point;
-    if (this.grab.joint) this.grab.joint.pointA = { ...point };
-    else {
-      const c = centerOf(this.grab.entity), target = Vector.add(point, this.grab.offset);
-      this.translate(this.grab.entity, target.x - c.x, target.y - c.y);
-    }
+    if (this.grab) this.grab.point = { ...point };
   }
 
   endGrab() {
-    if (this.grab?.joint) Composite.remove(this.engine.world, this.grab.joint);
+    if (!this.grab) return;
+    const entity = this.grab.entity;
     this.grab = null;
+    if (entity.fixed) this.mount(entity);
   }
 
-  startPress(entity, point) {
-    if (!entity.mat.soft) return false;
-    this.releasePress(false);
-    const c = centerOf(entity), r = entity.radius;
-    const makeJaw = (y) => Bodies.rectangle(c.x, y, r * 4.8, 14, { isStatic: true, friction: 0.02, collisionFilter: { mask: 0xFFFFFFFF } });
-    const jaws = [makeJaw(c.y - r - 11), makeJaw(c.y + r + 11)];
-    Composite.add(this.engine.world, jaws);
-    this.press = { entity, origin: { ...point }, point: { ...point }, center: c, jaws, charge: 0 };
-    return true;
+  driveGrab() {
+    if (!this.grab) return;
+    const g = this.grab, e = g.entity, c = centerOf(e);
+    const target = Vector.add(g.point, g.offset);
+    const velocity = e.nodes.reduce((v, b) => Vector.add(v, Vector.mult(b.velocity, 1 / e.nodes.length)), { x: 0, y: 0 });
+    // A distributed hand force transports the whole toy in free space. Contact
+    // blocks the leading surface, so the same force naturally compresses it.
+    let a = Vector.sub(Vector.mult(Vector.sub(target, c), 0.00040), Vector.mult(velocity, 0.0023));
+    const magnitude = Vector.magnitude(a);
+    if (magnitude > 0.055) a = Vector.mult(a, 0.055 / magnitude);
+    g.acceleration = a;
+    for (const b of e.nodes) Body.applyForce(b, b.position, {
+      x: b.mass * (a.x - (!e.fixed ? this.engine.gravity.x * this.engine.gravity.scale : 0)),
+      y: b.mass * (a.y - (!e.fixed ? this.engine.gravity.y * this.engine.gravity.scale : 0)),
+    });
   }
 
-  releasePress(launch = true) {
-    if (!this.press) return;
-    const { entity, jaws, charge, origin, point } = this.press;
-    Composite.remove(this.engine.world, jaws);
-    if (launch && charge > 0.08) {
-      const aim = Vector.sub(origin, point);
-      const dir = Vector.magnitude(aim) > 26 ? Vector.normalise(aim) : { x: 0, y: -1 };
-      const speed = 4 + charge * 20;
-      for (const node of entity.nodes) Body.setVelocity(node, Vector.mult(dir, speed));
-      this.onBurst?.(centerOf(entity), entity.mat.color, 18);
+  preserveMembrane(entity) {
+    // Unconnected sides still occupy space. Self-contact and inversion
+    // constraints keep a compressed boundary from passing through itself.
+    const nodes = entity.nodes, count = nodes.length;
+    const move = (node, dx, dy) => Body.setPosition(node, {
+      x: Math.max(entity.nodeRadius * 0.85, Math.min(this.width - entity.nodeRadius * 0.85, node.position.x + dx)),
+      y: Math.max(entity.nodeRadius * 0.85, Math.min(this.height - entity.nodeRadius * 0.85, node.position.y + dy)),
+    });
+    if (entity.mat.soft) {
+      const pose = poseOf(entity), stiffness = 0.015 + entity.mat.stiffness * 0.06;
+      for (let i = 0; i < count; i++) {
+        const target = Vector.add(pose.position, Vector.rotate(entity.restPoints[i], pose.angle));
+        const correction = Vector.mult(Vector.sub(target, nodes[i].position), stiffness);
+        move(nodes[i], correction.x, correction.y);
+      }
     }
-    this.press = null;
+    if (!entity.mat.soft && polygonArea(nodes) > entity.restArea * 0.60) return;
+    for (let iteration = 0; iteration < 4; iteration++) {
+      const pose = poseOf(entity);
+      const cross = (a, b, p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      for (let i = 0; i < count; i++) for (let j = i + 2; j < count; j++) {
+        if (i === 0 && j === count - 1) continue;
+        const indices = [i, (i + 1) % count, j, (j + 1) % count];
+        const [a,b,c,d] = indices.map(index => nodes[index].position);
+        if (cross(a,b,c) * cross(a,b,d) >= 0 || cross(c,d,a) * cross(c,d,b) >= 0) continue;
+        // Recover the intended spring orientation locally, rather than letting
+        // a crossed edge settle into an inside-out triangle after release.
+        for (const index of indices) {
+          const target = Vector.add(pose.position, Vector.rotate(entity.restPoints[index], pose.angle));
+          let correction = Vector.mult(Vector.sub(target, nodes[index].position), 0.45);
+          const length = Vector.magnitude(correction);
+          if (length > 5) correction = Vector.mult(correction, 5 / length);
+          move(nodes[index], correction.x, correction.y);
+        }
+      }
+      for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++) {
+        const separation = Math.min(j - i, count - j + i);
+        if (separation <= 1) continue;
+        const rest = Vector.magnitude(Vector.sub(entity.restPoints[i], entity.restPoints[j]));
+        const minimum = Math.min(entity.nodeRadius * 1.85, rest * 0.8);
+        const delta = Vector.sub(nodes[j].position, nodes[i].position), distance = Vector.magnitude(delta);
+        if (distance >= minimum) continue;
+        const direction = distance > 0.001 ? Vector.mult(delta, 1 / distance) : Vector.normalise(Vector.sub(entity.restPoints[j], entity.restPoints[i]));
+        const correction = Vector.mult(direction, Math.min(3, (minimum - distance) * 0.5));
+        move(nodes[i], -correction.x, -correction.y); move(nodes[j], correction.x, correction.y);
+      }
+      const deficit = entity.restArea * 0.32 - polygonArea(nodes);
+      if (deficit <= 0) continue;
+      const gradients = nodes.map((_, i) => {
+        const a = nodes[(i + count - 1) % count].position, b = nodes[(i + 1) % count].position;
+        return { x: (b.y - a.y) / 2, y: (a.x - b.x) / 2 };
+      });
+      const denominator = gradients.reduce((sum, g) => sum + g.x * g.x + g.y * g.y, 0) || 1;
+      for (let i = 0; i < count; i++) {
+        let delta = Vector.mult(gradients[i], deficit / denominator);
+        const length = Vector.magnitude(delta);
+        if (length > 3) delta = Vector.mult(delta, 3 / length);
+        move(nodes[i], delta.x, delta.y);
+      }
+    }
   }
 
   setGravity(mode) {
@@ -233,35 +325,43 @@ export class PhysicsRoom {
 
   step() {
     this.elapsed += STEP / 1000;
-    if (this.press) {
-      const p = this.press;
-      p.charge = Math.min(1, p.charge + STEP / 1350);
-      const r = p.entity.radius, gap = r * (1.06 - p.charge * 0.68) + 7;
-      Body.setPosition(p.jaws[0], { x: p.center.x, y: p.center.y - gap });
-      Body.setPosition(p.jaws[1], { x: p.center.x, y: p.center.y + gap });
-    }
+    this.driveGrab();
     const fans = this.entities.filter(e => e.kind === 'fan');
     const magnets = this.entities.filter(e => e.kind === 'magnet');
     for (const e of this.entities) {
       e.age += STEP / 1000;
-      if (e.mat.soft) {
+      {
         const area = polygonArea(e.nodes);
-        const pressure = Math.max(-0.8, Math.min(3, e.restArea / Math.max(e.restArea * 0.15, area) - 1)) * e.mat.pressure;
+        const volumeRatio = e.restArea / Math.max(e.restArea * 0.15, area);
+        // Bulk resistance rises sharply near collapse, like a compressed
+        // elastic material, while ordinary squishing stays compliant.
+        const bulk = Math.max(1, (volumeRatio / 1.7) ** 4);
+        const pressure = Math.max(-0.8, Math.min(24, (volumeRatio - 1) * bulk)) * e.mat.pressure;
         for (let i = 0; i < e.nodes.length; i++) {
           const before = e.nodes[(i - 1 + e.nodes.length) % e.nodes.length].position;
           const after = e.nodes[(i + 1) % e.nodes.length].position;
           Body.applyForce(e.nodes[i], e.nodes[i].position, { x: (after.y - before.y) * pressure / 2, y: (before.x - after.x) * pressure / 2 });
         }
       }
+      if (e.mat.soft) {
+        // Weak rest-shape elasticity unfolds a deeply compressed membrane;
+        // internal forces sum to zero and never propel its center of mass.
+        const pose = poseOf(e), recovery = 0.00002 + e.mat.stiffness * 0.00035;
+        for (let i = 0; i < e.nodes.length; i++) {
+          const b = e.nodes[i], target = Vector.add(pose.position, Vector.rotate(e.restPoints[i], pose.angle));
+          Body.applyForce(b, b.position, Vector.mult(Vector.sub(target, b.position), b.mass * recovery));
+        }
+      }
       for (const b of e.nodes) {
-        if (!b.isStatic) {
+        if (e.fixed) Body.applyForce(b, b.position, { x: -b.mass * this.engine.gravity.x * this.engine.gravity.scale, y: -b.mass * this.engine.gravity.y * this.engine.gravity.scale });
+        if (!e.fixed) {
           for (const fan of fans) {
-            const c = fan.nodes[0].position;
+            const c = centerOf(fan);
             const dx = b.position.x - c.x, dy = c.y - b.position.y;
             if (Math.abs(dx) < 68 && dy > 15 && dy < 380) Body.applyForce(b, b.position, { x: Math.sin(this.elapsed * 3 + dy * 0.03) * b.mass * 0.00010, y: -b.mass * 0.0021 * (1 - dy / 450) });
           }
           if (e.kind === 'steel') for (const m of magnets) {
-            const d = Vector.sub(m.nodes[0].position, b.position), dist = Vector.magnitude(d);
+            const d = Vector.sub(centerOf(m), b.position), dist = Vector.magnitude(d);
             if (dist > 25 && dist < 300) Body.applyForce(b, b.position, Vector.mult(Vector.normalise(d), b.mass * 0.0024 * (1 - dist / 350)));
           }
         }
@@ -269,6 +369,7 @@ export class PhysicsRoom {
       }
     }
     Engine.update(this.engine, STEP);
+    for (const e of this.entities) this.preserveMembrane(e);
     // Bound extreme impulses and repair only escaped/invalid states, never normal deformation.
     for (const e of [...this.entities]) {
       for (const b of e.nodes) {
@@ -283,28 +384,31 @@ export class PhysicsRoom {
   }
 
   serialize() {
-    return { version: 1, width: this.width, height: this.height, gravity: this.gravity, entities: this.entities.map(e => ({ kind: e.kind, size: e.size, position: centerOf(e), angle: e.nodes[0].angle, nodes: e.nodes.map(b => ({ x: b.position.x, y: b.position.y, vx: b.velocity.x, vy: b.velocity.y, angle: b.angle, angularVelocity: b.angularVelocity })) })) };
+    return { version: 2, width: this.width, height: this.height, gravity: this.gravity, entities: this.entities.map(e => ({ kind: e.kind, size: e.size, position: centerOf(e), angle: poseOf(e).angle, nodes: e.nodes.map(b => ({ x: b.position.x, y: b.position.y, vx: b.velocity.x, vy: b.velocity.y, angle: b.angle, angularVelocity: b.angularVelocity })) })) };
   }
 
   restore(data) {
-    if (!data || data.version !== 1 || !Array.isArray(data.entities) || data.entities.length > MAX_OBJECTS || !Number.isFinite(data.width) || !Number.isFinite(data.height) || data.width < 100 || data.height < 100) throw new Error('This is not a valid Squish Lab room.');
+    if (!data || ![1, 2].includes(data.version) || !Array.isArray(data.entities) || data.entities.length > MAX_OBJECTS || !Number.isFinite(data.width) || !Number.isFinite(data.height) || data.width < 100 || data.height < 100) throw new Error('This is not a valid Squish Lab room.');
     for (const e of data.entities) {
-      if (!e || !Object.hasOwn(MATERIALS, e.kind) || !e.position || ![e.position.x, e.position.y, e.size].every(Number.isFinite) || e.size < 0.5 || e.size > 1.65 || !Array.isArray(e.nodes) || e.nodes.length !== (MATERIALS[e.kind].soft ? 20 : 1) || e.nodes.some(n => !n || ![n.x, n.y, n.vx, n.vy, n.angle ?? 0, n.angularVelocity ?? 0].every(Number.isFinite) || Math.abs(n.x) > 100000 || Math.abs(n.y) > 100000)) throw new Error('This room contains invalid objects.');
+      if (!e || !Object.hasOwn(MATERIALS, e.kind) || !e.position || ![e.position.x, e.position.y, e.size, e.angle ?? 0].every(Number.isFinite) || e.size < 0.5 || e.size > 1.65 || !Array.isArray(e.nodes)) throw new Error('This room contains invalid objects.');
+      const expected = data.version === 1 ? (MATERIALS[e.kind].soft ? 20 : 1) : restShape(MATERIALS[e.kind], e.size).points.length;
+      if (e.nodes.length !== expected || e.nodes.some(n => !n || ![n.x, n.y, n.vx, n.vy, n.angle ?? 0, n.angularVelocity ?? 0].every(Number.isFinite) || Math.abs(n.x) > 100000 || Math.abs(n.y) > 100000)) throw new Error('This room contains invalid objects.');
     }
     this.clear();
     this.setGravity(data.gravity);
     const sx = this.width / data.width, sy = this.height / data.height;
     for (const saved of data.entities) {
       const e = this.add(saved.kind, saved.position.x * sx, saved.position.y * sy, { size: saved.size, angle: saved.angle });
-      // Translate each saved shape as a whole; preserve its size across viewport changes.
       const dx = saved.position.x * (sx - 1), dy = saved.position.y * (sy - 1);
+      const legacySolid = data.version === 1 && !e.mat.soft;
       e.nodes.forEach((b, i) => {
-        const n = saved.nodes[i];
-        Body.setPosition(b, { x: n.x + dx, y: n.y + dy });
+        const n = saved.nodes[legacySolid ? 0 : i];
+        if (!legacySolid) Body.setPosition(b, { x: n.x + dx, y: n.y + dy });
         Body.setVelocity(b, { x: Math.max(-45, Math.min(45, n.vx)), y: Math.max(-45, Math.min(45, n.vy)) });
-        Body.setAngle(b, n.angle ?? 0);
+        if (!legacySolid) Body.setAngle(b, n.angle ?? 0);
         Body.setAngularVelocity(b, Math.max(-1, Math.min(1, n.angularVelocity ?? 0)));
       });
+      if (e.fixed) this.mount(e);
     }
   }
 
